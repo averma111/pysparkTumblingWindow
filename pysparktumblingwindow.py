@@ -3,6 +3,7 @@ from lib.util import get_spark_app_config, read_kafka_stream, write_output_conso
 from pyspark.sql import SparkSession
 from lib.logger import Log4j
 from pyspark.sql import functions as F
+from pyspark.sql.functions import sum as _sum
 
 if __name__ == "__main__":
     conf = get_spark_app_config()
@@ -31,22 +32,23 @@ if __name__ == "__main__":
 
     trade_df = value_df.select("value.*") \
         .withColumn("CreatedTime", F.to_timestamp(F.col("CreatedTime"), "yyyy-MM-dd HH:mm:ss")) \
-        .withColumn("Buy", F.expr("CASE WHEN Type =='BUY' then Amount else 0 end")) \
-        .withColumn("Sell", F.expr("CASE WHEN Type =='SELL' then Amount else 0 end"))
+        .withColumn("Buy", F.expr("case when Type =='BUY' then Amount else 0 end")) \
+        .withColumn("Sell", F.expr("case when Type =='SELL' then Amount else 0 end"))
 
     # trade_df.printSchema()
 
     window_agg_df = trade_df \
         .groupBy(  # col("BrokerCode"),
         F.window(F.col("CreatedTime"), "15 minute")) \
-        .agg(F.sum(('Buy').cast("int")).alias("TotalBuy"),sum(('Sell').cast("int")).alias("TotalSell")
-             )
+        .agg(_sum("Buy").alias('TotalBuy'),
+             _sum("Sell").alias("TotalSell"))
 
-  #  window_agg_df.printSchema()
 
-    output_df = window_agg_df.select("window.start", "window.end", "TotalBuy", "TotalSell")
+window_agg_df.printSchema()
 
-    logger.info("Waiting for Query")
+output_df = window_agg_df.select("window.start", "window.end", "TotalBuy", "TotalSell")
+
+logger.info("Waiting for Query")
 window_query = write_output_console(output_df)
 
 window_query.awaitTermination()
